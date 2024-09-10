@@ -11,5 +11,5 @@ The processing task waits on the button queue with 5 second wait time. If a butt
 is processed as shown in the state diagram. If a timeout occurs, then lock is returned to the initial state 
 where it starts detecting the sequence from the beginning. An open lock is indicated by an led that is 
 switched on for 5 seconds (=the time lock stays open). 
-Make sure that stack for each task is large enough (512 as stack size parameter à 2 kB) 
+Make sure that stack for each task is large enough (512 as stack size parameter -> 2 kB) 
 The sequence to open the lock is 0-0-2-1-2
