@@ -111,6 +111,7 @@ void event_handler_task(void *param) {
                         blink_frequency += event.direction;
                         if (blink_frequency < 2) blink_frequency = 2;    // Min frequency
                         if (blink_frequency > 200) blink_frequency = 200; // Max frequency
+                        std::cout << "Blink frequency: " << blink_frequency << " Hz\n";
                     }
                     break;
             }
