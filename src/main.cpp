@@ -76,7 +76,7 @@ void blink_task(void *param)
         } else {
             // Keep LED off
             gpio_put(LED_PIN, 0);
-            vTaskDelay(pdMS_TO_TICKS(100)); // Idle
+            vTaskDelay(pdMS_TO_TICKS(100)); // Idle delay
         }
     }
 }
@@ -103,7 +103,6 @@ void event_handler_task(void *param) {
                 case EVENT_BUTTON_PRESS:
                     // Toggle LED state
                     led_on = !led_on;
-                    std::cout << "LED " << (led_on ? "ON" : "OFF") << "\n";
                     break;
 
                 case EVENT_ROTARY_TURN:
@@ -112,7 +111,6 @@ void event_handler_task(void *param) {
                         blink_frequency += event.direction;
                         if (blink_frequency < 2) blink_frequency = 2;    // Min frequency
                         if (blink_frequency > 200) blink_frequency = 200; // Max frequency
-                        std::cout << "Blink frequency: " << blink_frequency << " Hz\n";
                     }
                     break;
             }
@@ -128,8 +126,8 @@ int main()
     eventQueue = xQueueCreate(10, sizeof(gpio_event_t));
     vQueueAddToRegistry(eventQueue, "GPIO_Event_Queue");
 
-    xTaskCreate(blink_task, "BLINK", 256, (void *) nullptr, 1, NULL);
-    xTaskCreate(event_handler_task, "EVENT_HANDLER", 256, (void *) nullptr, 1, NULL);
+    xTaskCreate(blink_task, "BLINK", 256, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(event_handler_task, "EVENT_HANDLER", 256, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
 
     vTaskStartScheduler();
 
