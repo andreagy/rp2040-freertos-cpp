@@ -18,7 +18,6 @@ const uint ROT_B_PIN = 11;
 const uint ROT_SW_PIN = 12;
 const uint LED_PIN = 22;
 
-SemaphoreHandle_t gpio_sem;
 int blink_frequency = 2; // Start frequency at 2 Hz
 bool led_on = false;     // LED initially OFF
 
