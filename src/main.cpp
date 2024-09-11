@@ -26,13 +26,12 @@ void read_task(void *param) {
     int ch {0};
     while(1) {
         ch = getchar_timeout_us(0);
-        if(ch != PICO_ERROR_TIMEOUT && ch != '\n' && ch != '\r') {
+        if(ch != PICO_ERROR_TIMEOUT) {
             putchar(ch);
             std::cout << ch;
 
             xSemaphoreGive(serial_sem);
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
+        }else vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -58,9 +57,8 @@ int main()
     serial_sem = xSemaphoreCreateBinary();
 
     if (serial_sem != NULL) {
-        xSemaphoreTake(serial_sem, 0);
         xTaskCreate(read_task, "SERIAL_READ", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
-        xTaskCreate(blinker_task, "LED_BLINK", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
+        xTaskCreate(blinker_task, "LED_BLINK", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
         vTaskStartScheduler();
     }
 
