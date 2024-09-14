@@ -1,9 +1,11 @@
 #include <iostream>
+#include <cstring>
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
 #include "pico/stdlib.h"
-#include "hardware/gpio.h"
+#include "timers.h"
+#include "PicoOsUart.h"
 
 #include "hardware/timer.h"
 extern "C" {
@@ -12,123 +14,125 @@ uint32_t read_runtime_ctr(void) {
 }
 }
 
-// Pins
-const uint ROT_A_PIN = 10;
-const uint ROT_B_PIN = 11;
-const uint ROT_SW_PIN = 12;
 const uint LED_PIN = 22;
 
-int blink_frequency = 2; // Start frequency at 2 Hz
-bool led_on = false;     // LED initially OFF
+PicoOsUart uart(0, 0, 1, 115200);
 
-// Event structure
-typedef enum {
-    EVENT_ROTARY_TURN,
-    EVENT_BUTTON_PRESS
-} event_type_t;
+int command_count {0};
 
-typedef struct {
-    event_type_t type;
-    int direction; // 1 for clockwise, -1 for counter-clockwise
-} gpio_event_t;
+TimerHandle_t inactivity_timer;
+TimerHandle_t led_toggle_timer;
 
-QueueHandle_t eventQueue;
+TickType_t last_toggle_time = 0;
+int led_interval = 5000; // 5 sec
+bool led_on = false;
 
-volatile uint32_t last_button_press_time = 0;
+void process_command(char *command) {
+    if (strcmp (command, "help") == 0) {
+        uart.send("Available commands:\r\n");
+        uart.send("help - display this message\r\n");
+        uart.send("interval <seconds> - set LED toggle interval\r\n");
+        uart.send("time - show time since last LED toggle\r\n");
 
-void gpio_callback(uint gpio, uint32_t events) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    gpio_event_t event;
-
-    // Handle rotary encoder turn (Rot_A rising edge)
-    if (gpio == ROT_A_PIN && (events & GPIO_IRQ_EDGE_RISE)) {
-        event.type = EVENT_ROTARY_TURN;
-        event.direction = gpio_get(ROT_B_PIN) ? -1 : 1; // Check Rot_B for direction
-        xQueueSendFromISR(eventQueue, &event, &xHigherPriorityTaskWoken);
-    }
-
-    // Handle button press (Rot_SW falling edge)
-    if (gpio == ROT_SW_PIN && (events & GPIO_IRQ_EDGE_FALL)) {
-        uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        if (current_time - last_button_press_time > 250) {
-            last_button_press_time = current_time;
-            event.type = EVENT_BUTTON_PRESS;
-            event.direction = 0;  // No direction for button press
-            xQueueSendFromISR(eventQueue, &event, &xHigherPriorityTaskWoken);
-        }
-    }
-
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
-
-void blink_task(void *param)
-{
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
-
-    while (true) {
-        if (led_on) {
-            // LED blink logic based on current frequency
-            gpio_put(LED_PIN, 1);
-            vTaskDelay(pdMS_TO_TICKS(500 / blink_frequency));
-            gpio_put(LED_PIN, 0);
-            vTaskDelay(pdMS_TO_TICKS(500 / blink_frequency));
+    } else if (strncmp (command, "interval ", 9) == 0) {
+        int new_interval = atoi(command + 9); // get number after "interval"
+        if (new_interval > 0) {
+            led_interval = new_interval * 1000;
+            xTimerChangePeriod(led_toggle_timer, pdMS_TO_TICKS(led_interval), 0);
+            uart.send("New LED interval set\r\n");
         } else {
-            // Keep LED off
-            gpio_put(LED_PIN, 0);
-            vTaskDelay(pdMS_TO_TICKS(100)); // Idle delay
+            uart.send("Invalid interval\r\n");
         }
+
+    } else if (strcmp(command, "time") == 0) {
+        TickType_t current_time = xTaskGetTickCount();
+        int elapsed_time = (current_time - last_toggle_time) * portTICK_PERIOD_MS / 100;
+        uart.send("Time since last toggle: ");
+        uart.send(std::to_string(elapsed_time / 10).c_str());
+        uart.send(".");
+        uart.send(std::to_string(elapsed_time % 10).c_str());
+        uart.send(" seconds\r\n");
+
+    } else {
+        uart.send("Unknown command: ");
+        uart.send(command);
+        uart.send("\r\n");
     }
 }
 
-void event_handler_task(void *param) {
-    gpio_event_t event;
-
-    // Initialize button and rotary encoder pins
-    gpio_init(ROT_SW_PIN);
-    gpio_set_dir(ROT_SW_PIN, GPIO_IN);
-    gpio_pull_up(ROT_SW_PIN);
-    gpio_set_irq_enabled_with_callback(ROT_SW_PIN, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
-
-    gpio_init(ROT_A_PIN);
-    gpio_set_dir(ROT_A_PIN, GPIO_IN);
-    gpio_set_irq_enabled_with_callback(ROT_A_PIN, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
-
-    gpio_init(ROT_B_PIN);
-    gpio_set_dir(ROT_B_PIN, GPIO_IN);
-
+void uart_receive_task(void *param) {
+    uint8_t buffer[64];
+    char command_buffer[64];
     while (true) {
-        if (xQueueReceive(eventQueue, &event, portMAX_DELAY) == pdTRUE) {
-            switch (event.type) {
-                case EVENT_BUTTON_PRESS:
-                    // Toggle LED state
-                    led_on = !led_on;
-                    break;
+        if (int count = uart.read(buffer, 64, 30); count > 0) {
+            uart.write(buffer, count); //show typing
 
-                case EVENT_ROTARY_TURN:
-                    if (led_on) {
-                        // Only change frequency if LED is ON
-                        blink_frequency += event.direction;
-                        if (blink_frequency < 2) blink_frequency = 2;    // Min frequency
-                        if (blink_frequency > 200) blink_frequency = 200; // Max frequency
-                        std::cout << "Blink frequency: " << blink_frequency << " Hz\n";
+            for (int i = 0; i < count; i++) {
+                char current_char = static_cast<char>(buffer[i]);
+                command_buffer[command_count] = current_char;
+
+                if (current_char == '\r' || current_char == '\n') {
+                    command_buffer[command_count] = '\0';
+                    process_command(command_buffer);
+                    command_count = 0;
+
+                    xTimerReset(inactivity_timer, 0);
+
+                }else {
+                    //increment if valid char
+                    command_count++;
+
+                    //ensure buffer doesnt overflow
+                    if (command_count >= sizeof(command_buffer) - 1) {
+                        command_count = 0;  //reset if overflowed
                     }
-                    break;
+                }
             }
         }
     }
 }
 
+void inactivity_timer_callback(TimerHandle_t xTimer) {
+    command_count = 0;
+    uart.send("[Inactive]\r\n");
+}
+
+void led_toggle_timer_callback(TimerHandle_t xTimer) {
+    last_toggle_time = xTaskGetTickCount(); //update this value
+    led_on = !led_on;
+    gpio_put(LED_PIN, led_on);
+}
+
+
 
 int main()
 {
-    stdio_init_all();
+    gpio_init(LED_PIN);
+    gpio_set_dir(LED_PIN, GPIO_OUT);
 
-    eventQueue = xQueueCreate(10, sizeof(gpio_event_t));
-    vQueueAddToRegistry(eventQueue, "GPIO_Event_Queue");
+    inactivity_timer = xTimerCreate(
+            "InactivityTimer",
+            pdMS_TO_TICKS(30000),
+            pdFALSE,
+            NULL,
+            inactivity_timer_callback);
 
-    xTaskCreate(blink_task, "BLINK", 256, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(event_handler_task, "EVENT_HANDLER", 256, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
+    led_toggle_timer = xTimerCreate(
+            "LedToggleTimer",
+            pdMS_TO_TICKS(led_interval),
+            pdTRUE,
+            NULL,
+            led_toggle_timer_callback);
+
+    xTimerStart(led_toggle_timer, 0);
+    xTimerStart(inactivity_timer, 0);
+
+    xTaskCreate(uart_receive_task,
+                "UART_RECEIVE",
+                512,
+                (void *) nullptr,
+                1,
+                NULL);
 
     vTaskStartScheduler();
 
