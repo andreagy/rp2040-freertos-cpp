@@ -3,11 +3,14 @@
 ### ARM Processors and Embedded Operating Systems course exercises
 Each exercise is a branch of the original template file provided by the lecturer.
 
-## Exercise 2 Part 2 - GPIO interrupts and queue
-Implement a program for switching a LED on/off and changing the blinking frequency. The program should work as follows: 
-- Rot_Sw, the push button on the rotary encoder shaft is the on/off button. When button is pressed the state of LEDs is toggled. Program must require that button presses that are closer than 250 ms are ignored. 
-- Rotary encoder is used to control blinking frequency of the LED. Turning the knob clockwise increases frequency and turning counterclockwise reduces frequency. If the LED is in OFF state turning the knob has no effect. Minimum frequency is 2 Hz and maximum frequency is 200 Hz. 
-When frequency is changed it must be printed  
-- When LED state is toggled to ON the program must use the frequency at which it was switched off. You must use GPIO interrupts for detecting the encoder turns and button presses and send the button and encoder events to a queue. 
-All queues must be registered to queue registry.
-Create two tasks: one for receiving and filtering gpio events from the queue and other for blinking the LED.
+## Exercise 3: Timers
+Implement a program that reads commands from the serial port using the provided interrupt driven 
+FreeRTOS uart driver. The program creates two timers: one for inactivity monitoring and one for toggling 
+the green led. If no characters are received in 30 seconds all the characters received so far are discarded 
+and the program prints “[Inactive]”. When a character is received the inactivity timer is started/reset. 
+When enter is pressed the received character are processed in a command interpreter. The commands are: 
+- help – display usage instructions 
+- interval <number> - set the led toggle interval (default is 5 seconds) 
+- time – prints the number of seconds with 0.1s accuracy since the last led toggle
+
+If no valid command is found the program prints: “unknown command”.
