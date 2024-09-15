@@ -4,8 +4,7 @@
 #include "task.h"
 #include "semphr.h"
 #include "pico/stdlib.h"
-#include "timers.h"
-#include "PicoOsUart.h"
+#include "hardware/gpio.h"
 
 #include "hardware/timer.h"
 extern "C" {
@@ -14,92 +13,40 @@ uint32_t read_runtime_ctr(void) {
 }
 }
 
+// Pins
+const uint SW0_PIN = 9;
 const uint LED_PIN = 22;
 
-PicoOsUart uart(0, 0, 1, 115200);
+struct debugEvent {
+    const char *format;
+    uint32_t data[3];
+};
 
-int command_count {0};
+QueueHandle_t log_q;
 
-TimerHandle_t inactivity_timer;
-TimerHandle_t led_toggle_timer;
-
-TickType_t last_toggle_time = 0;
-int led_interval = 5000; // default is 5 sec
-bool led_on = false;
-
-void process_command(char *command) {
-    if (strcmp (command, "help") == 0) {
-        uart.send("Available commands:\r\n");
-        uart.send("help - display this message\r\n");
-        uart.send("interval <seconds> - set LED toggle interval\r\n");
-        uart.send("time - show time since last LED toggle\r\n");
-
-    } else if (strncmp (command, "interval ", 9) == 0) {
-        int new_interval = atoi(command + 9); // get number after "interval"
-        if (new_interval > 0) {
-            led_interval = new_interval * 1000;
-            xTimerChangePeriod(led_toggle_timer, pdMS_TO_TICKS(led_interval), 0);
-            uart.send("New LED interval set\r\n");
-        } else {
-            uart.send("Invalid interval\r\n");
-        }
-
-    } else if (strcmp(command, "time") == 0) {
-        TickType_t current_time = xTaskGetTickCount();
-        int elapsed_time = (current_time - last_toggle_time) * portTICK_PERIOD_MS / 100;
-        uart.send("Time since last toggle: ");
-        uart.send(std::to_string(elapsed_time / 10).c_str());
-        uart.send(".");
-        uart.send(std::to_string(elapsed_time % 10).c_str());
-        uart.send(" seconds\r\n");
-
-    } else {
-        uart.send("Unknown command: ");
-        uart.send(command);
-        uart.send("\r\n");
-    }
+void debug(const char *format, uint32_t d1, uint32_t d2, uint32_t d3) {
+    debugEvent e;
+    e.format = format;
+    e.data[0] = d1;
+    e.data[1] = d2;
+    e.data[2] = d3;
+    xQueueSend(log_q, &e, portMAX_DELAY);
 }
 
-void uart_receive_task(void *param) {
-    uint8_t buffer[64];
-    char command_buffer[64];
-    while (true) {
-        if (int count = uart.read(buffer, 64, 30); count > 0) {
-            uart.write(buffer, count); //show typing
+void debugTask(void *param) {
+    char buffer[64];
+    debugEvent e;
 
-            for (int i = 0; i < count; i++) {
-                char current_char = static_cast<char>(buffer[i]);
-                command_buffer[command_count] = current_char;
+    while (1) {
+        if (xQueueReceive(log_q, &e, portMAX_DELAY) == pdTRUE) {
+            //get the current timestamp
+            TickType_t timestamp = xTaskGetTickCount();
 
-                if (current_char == '\r' || current_char == '\n') {
-                    command_buffer[command_count] = '\0';
-                    process_command(command_buffer);
-                    command_count = 0;
-
-                    xTimerReset(inactivity_timer, 0);
-
-                }else {
-                    command_count++;
-
-                    //ensure buffer doesnt overflow
-                    if (command_count >= sizeof(command_buffer) - 1) {
-                        command_count = 0;  //reset if overflowed
-                    }
-                }
-            }
+            //format the message with the timestamp
+            snprintf(buffer, sizeof(buffer), "[%u] %s", timestamp, e.format);
+            printf(buffer, e.data[0], e.data[1], e.data[2]);
         }
     }
-}
-
-void inactivity_timer_callback(TimerHandle_t xTimer) {
-    command_count = 0;
-    uart.send("[Inactive]\r\n");
-}
-
-void led_toggle_timer_callback(TimerHandle_t xTimer) {
-    last_toggle_time = xTaskGetTickCount(); //update tick count
-    led_on = !led_on;
-    gpio_put(LED_PIN, led_on);
 }
 
 
@@ -109,29 +56,9 @@ int main()
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
-    inactivity_timer = xTimerCreate(
-            "InactivityTimer",
-            pdMS_TO_TICKS(30000),
-            pdFALSE,
-            NULL,
-            inactivity_timer_callback);
+    log_q = xQueueCreate(10, sizeof(debugEvent));
+    vQueueAddToRegistry(log_q, "LOG_Q");
 
-    led_toggle_timer = xTimerCreate(
-            "LedToggleTimer",
-            pdMS_TO_TICKS(led_interval),
-            pdTRUE,
-            NULL,
-            led_toggle_timer_callback);
-
-    xTimerStart(led_toggle_timer, 0);
-    xTimerStart(inactivity_timer, 0);
-
-    xTaskCreate(uart_receive_task,
-                "UART_RECEIVE",
-                512,
-                (void *) nullptr,
-                tskIDLE_PRIORITY + 1,
-                NULL);
 
     vTaskStartScheduler();
 
