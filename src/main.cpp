@@ -24,7 +24,7 @@ TimerHandle_t inactivity_timer;
 TimerHandle_t led_toggle_timer;
 
 TickType_t last_toggle_time = 0;
-int led_interval = 5000; // 5 sec
+int led_interval = 5000; // default is 5 sec
 bool led_on = false;
 
 void process_command(char *command) {
@@ -79,7 +79,6 @@ void uart_receive_task(void *param) {
                     xTimerReset(inactivity_timer, 0);
 
                 }else {
-                    //increment if valid char
                     command_count++;
 
                     //ensure buffer doesnt overflow
@@ -98,7 +97,7 @@ void inactivity_timer_callback(TimerHandle_t xTimer) {
 }
 
 void led_toggle_timer_callback(TimerHandle_t xTimer) {
-    last_toggle_time = xTaskGetTickCount(); //update this value
+    last_toggle_time = xTaskGetTickCount(); //update tick count
     led_on = !led_on;
     gpio_put(LED_PIN, led_on);
 }
@@ -131,7 +130,7 @@ int main()
                 "UART_RECEIVE",
                 512,
                 (void *) nullptr,
-                1,
+                tskIDLE_PRIORITY + 1,
                 NULL);
 
     vTaskStartScheduler();
