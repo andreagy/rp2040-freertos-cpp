@@ -1,4 +1,4 @@
-# RP2040 FreeRTOS CPP
+# RP2040 FreeRTOS
 
 ### ARM Processors and Embedded Operating Systems course exercises
 Each exercise is a branch of the original template file provided by the lecturer.
