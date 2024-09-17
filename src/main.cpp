@@ -15,10 +15,7 @@ uint32_t read_runtime_ctr(void) {
 }
 }
 
-//RNG setup
-std::random_device rd;  // obtain a random number from hardware
-std::mt19937 gen(rd()); // seed the generator
-std::uniform_int_distribution<> distr(1000, 2000); //define range in ms
+#define TASK_RUN_TIMEOUT pdMS_TO_TICKS(30000) // 30 seconds
 
 // Pins
 const uint SW0_PIN = 9;
@@ -38,6 +35,9 @@ struct debugEvent {
 QueueHandle_t syslog_q;
 EventGroupHandle_t event_group;
 
+// Global to track the last runtime of tasks
+TickType_t last_run_times[3] = {0}; // buttonTask1-2-3 -> 0, 1, 2
+
 struct Button {
     uint pin;
     int *counter;
@@ -56,8 +56,8 @@ uint32_t last_SW2_press_time{0};
 
 Button buttons[] = {
         {SW0_PIN, &SW0_count, &last_SW0_press_time, TASK1_BIT},
-        {SW1_PIN, &SW1_count, &last_SW1_press_time, TASK1_BIT},
-        {SW2_PIN, &SW2_count, &last_SW2_press_time, TASK1_BIT}
+        {SW1_PIN, &SW1_count, &last_SW1_press_time, TASK2_BIT},
+        {SW2_PIN, &SW2_count, &last_SW2_press_time, TASK3_BIT}
 };
 
 
@@ -92,75 +92,89 @@ void debugTask(void *param) {
     }
 }
 
-void buttonTask(void *param) {
+void buttonTask1(void *param) {
 
-    for (auto &button: buttons) {
-        create_button(button.pin);
-    }
+    create_button(buttons[0].pin);
 
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        for (int i = 0; i < 3; i++) {
-            if (!gpio_get(buttons[i].pin)) {
-                if (current_time - *buttons[i].last_button_press_time >= 250) {
-                    *buttons[i].last_button_press_time = current_time;
-                    (*buttons[i].counter)++;
-                    debug("Button: %d pressed. Count: %d\n", i, *buttons[i].counter, 0);
-                    xEventGroupSetBits(event_group, buttons[i].bit);
-                }
+        if (!gpio_get(buttons[0].pin)) {
+            if (current_time - *buttons[0].last_button_press_time >= 250) {
+                *buttons[0].last_button_press_time = current_time;
+                (*buttons[0].counter)++;
+                debug("Button: %d pressed. Count: %d\n", 0, *buttons[0].counter, 0);
+                xEventGroupSetBits(event_group, buttons[0].bit);
+                last_run_times[0] = xTaskGetTickCount();
             }
         }
         vTaskDelay(pdMS_TO_TICKS(10)); // Polling delay
     }
 }
 
-void task2(void *param) {
-    const int task_number = 2;
-    TickType_t last_print_time = xTaskGetTickCount();
+void buttonTask2(void *param) {
+
+    create_button(buttons[1].pin);
 
     while (true) {
-        // Wait for TASK1_BIT to be set
-        xEventGroupWaitBits(event_group, TASK1_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
-
-        while (true) {
-            TickType_t current_time = xTaskGetTickCount();
-            TickType_t elapsed_ticks = current_time - last_print_time;
-
-            debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
-            last_print_time = current_time;
-
-            // Generate random delay
-            TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
-            vTaskDelay(random_delay);
-
-            break;
+        uint32_t current_time = to_ms_since_boot(get_absolute_time());
+        if (!gpio_get(buttons[1].pin)) {
+            if (current_time - *buttons[1].last_button_press_time >= 250) {
+                *buttons[1].last_button_press_time = current_time;
+                (*buttons[1].counter)++;
+                debug("Button: %d pressed. Count: %d\n", 1, *buttons[1].counter, 0);
+                xEventGroupSetBits(event_group, buttons[1].bit);
+                last_run_times[1] = xTaskGetTickCount();
+            }
         }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Polling delay
     }
 }
 
+void buttonTask3(void *param) {
 
-void task3(void *param) {
-    const int task_number = 3;
-    TickType_t last_print_time = xTaskGetTickCount();
+    create_button(buttons[2].pin);
 
     while (true) {
-        // Wait for TASK1_BIT to be set
-        xEventGroupWaitBits(event_group, TASK1_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
-
-        while (true) {
-            TickType_t current_time = xTaskGetTickCount();
-            TickType_t elapsed_ticks = current_time - last_print_time;
-
-
-            debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
-            last_print_time = current_time;
-
-            // Generate random delay
-            TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
-            vTaskDelay(random_delay);
-
-            break;
+        uint32_t current_time = to_ms_since_boot(get_absolute_time());
+        if (!gpio_get(buttons[2].pin)) {
+            if (current_time - *buttons[2].last_button_press_time >= 250) {
+                *buttons[2].last_button_press_time = current_time;
+                (*buttons[2].counter)++;
+                debug("Button: %d pressed. Count: %d\n", 2, *buttons[2].counter, 0);
+                xEventGroupSetBits(event_group, buttons[2].bit);
+                last_run_times[2] = xTaskGetTickCount();
+            }
         }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Polling delay
+    }
+}
+
+void watchdogTask (void *param) {
+    while (true) {
+        // Wait for the event group to be updated by any task
+        xEventGroupWaitBits(
+                event_group,
+                TASK1_BIT | TASK2_BIT | TASK3_BIT,
+                pdTRUE,
+                pdFALSE,
+                portMAX_DELAY);
+
+        TickType_t current_time = xTaskGetTickCount();
+        bool all_tasks_ok = true;
+
+        // Check if each task has run in the last 30 seconds
+        for (int i = 0; i < 3; i++) {
+            if ((current_time - last_run_times[i]) > TASK_RUN_TIMEOUT) {
+                all_tasks_ok = false;
+                debug("Fail: Task %d missed deadline\n", i+1, 0, 0);
+            }
+        }
+
+        if (all_tasks_ok) {
+            debug("OK: All tasks ran within 30 seconds\n", 0, 0, 0);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(30000)); // Check every 30 seconds
     }
 }
 
@@ -173,10 +187,11 @@ int main() {
 
     event_group = xEventGroupCreate();
 
-    xTaskCreate(buttonTask, "TASK1", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, NULL);
-    xTaskCreate(task2, "TASK2", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(task3, "TASK3", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(debugTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(buttonTask1, "TASK1", 512, (void *) 0, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(buttonTask2, "TASK2", 512, (void *) 1, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(buttonTask3, "TASK3", 512, (void *) 2, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(watchdogTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(debugTask, "TASK5", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
 
 
     vTaskStartScheduler();
