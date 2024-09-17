@@ -5,7 +5,7 @@
 #include "semphr.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
-
+#include <random>
 #include "hardware/timer.h"
 #include "event_groups.h"
 
@@ -14,6 +14,11 @@ uint32_t read_runtime_ctr(void) {
     return timer_hw->timerawl;
 }
 }
+
+//RNG setup
+std::random_device rd;  // obtain a random number from hardware
+std::mt19937 gen(rd()); // seed the generator
+std::uniform_int_distribution<> distr(1000, 2000); //define range in ms
 
 // Pins
 const uint SW0_PIN = 9;
@@ -40,13 +45,13 @@ struct Button {
     EventBits_t bit;
 };
 
-int SW0_count {0};
-int SW1_count {0};
-int SW2_count {0};
+int SW0_count{0};
+int SW1_count{0};
+int SW2_count{0};
 
-uint32_t last_SW0_press_time {0};
-uint32_t last_SW1_press_time {0};
-uint32_t last_SW2_press_time {0};
+uint32_t last_SW0_press_time{0};
+uint32_t last_SW1_press_time{0};
+uint32_t last_SW2_press_time{0};
 
 
 Button buttons[] = {
@@ -54,7 +59,6 @@ Button buttons[] = {
         {SW1_PIN, &SW1_count, &last_SW1_press_time, TASK1_BIT},
         {SW2_PIN, &SW2_count, &last_SW2_press_time, TASK1_BIT}
 };
-
 
 
 void create_button(int gpio) {
@@ -90,7 +94,7 @@ void debugTask(void *param) {
 
 void buttonTask(void *param) {
 
-    for (auto & button : buttons) {
+    for (auto &button: buttons) {
         create_button(button.pin);
     }
 
@@ -110,10 +114,58 @@ void buttonTask(void *param) {
     }
 }
 
+void task2(void *param) {
+    const int task_number = 2;
+    TickType_t last_print_time = xTaskGetTickCount();
+
+    while (true) {
+        // Wait for TASK1_BIT to be set
+        xEventGroupWaitBits(event_group, TASK1_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
+
+        while (true) {
+            TickType_t current_time = xTaskGetTickCount();
+            TickType_t elapsed_ticks = current_time - last_print_time;
+
+            debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
+            last_print_time = current_time;
+
+            // Generate random delay
+            TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
+            vTaskDelay(random_delay);
+
+            break;
+        }
+    }
+}
 
 
-int main()
-{
+void task3(void *param) {
+    const int task_number = 3;
+    TickType_t last_print_time = xTaskGetTickCount();
+
+    while (true) {
+        // Wait for TASK1_BIT to be set
+        xEventGroupWaitBits(event_group, TASK1_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
+
+        while (true) {
+            TickType_t current_time = xTaskGetTickCount();
+            TickType_t elapsed_ticks = current_time - last_print_time;
+
+
+            debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
+            last_print_time = current_time;
+
+            // Generate random delay
+            TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
+            vTaskDelay(random_delay);
+
+            break;
+        }
+    }
+}
+
+
+int main() {
     stdio_init_all();
 
     syslog_q = xQueueCreate(10, sizeof(debugEvent));
@@ -121,11 +173,13 @@ int main()
 
     event_group = xEventGroupCreate();
 
-    xTaskCreate(buttonTask, "TASK1", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(buttonTask, "TASK1", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(task2, "TASK2", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(task3, "TASK3", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(debugTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
 
 
     vTaskStartScheduler();
 
-    while(1){};
+    while (1) {};
 }
