@@ -34,6 +34,7 @@ struct debugEvent {
 
 QueueHandle_t syslog_q;
 EventGroupHandle_t event_group;
+TaskHandle_t watchdogTaskHandle;
 
 // Global to track the last runtime of tasks
 TickType_t last_run_times[3] = {0}; // buttonTask1-2-3 -> 0, 1, 2
@@ -95,18 +96,26 @@ void debugTask(void *param) {
 void buttonTask1(void *param) {
 
     create_button(buttons[0].pin);
+    bool previous_state = true; // assuming the button is released (high)
 
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        if (!gpio_get(buttons[0].pin)) {
+        bool current_state = gpio_get(buttons[0].pin); //true if button is not pressed
+
+        if (previous_state == false && current_state == true) {
+            // button was pressed and now released
             if (current_time - *buttons[0].last_button_press_time >= 250) {
                 *buttons[0].last_button_press_time = current_time;
                 (*buttons[0].counter)++;
                 debug("Button: %d pressed. Count: %d\n", 0, *buttons[0].counter, 0);
                 xEventGroupSetBits(event_group, buttons[0].bit);
                 last_run_times[0] = xTaskGetTickCount();
+
+                // Resume watchdog when event bit is set
+                vTaskResume(watchdogTaskHandle);
             }
         }
+        previous_state = current_state;
         vTaskDelay(pdMS_TO_TICKS(10)); // Polling delay
     }
 }
@@ -114,18 +123,25 @@ void buttonTask1(void *param) {
 void buttonTask2(void *param) {
 
     create_button(buttons[1].pin);
+    bool previous_state = true; // assuming the button is released (high)
 
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        if (!gpio_get(buttons[1].pin)) {
+        bool current_state = gpio_get(buttons[1].pin); //true if button is not pressed
+
+        if (previous_state == false && current_state == true) {
             if (current_time - *buttons[1].last_button_press_time >= 250) {
                 *buttons[1].last_button_press_time = current_time;
                 (*buttons[1].counter)++;
                 debug("Button: %d pressed. Count: %d\n", 1, *buttons[1].counter, 0);
                 xEventGroupSetBits(event_group, buttons[1].bit);
                 last_run_times[1] = xTaskGetTickCount();
+
+                // Resume watchdog when event bit is set
+                vTaskResume(watchdogTaskHandle);
             }
         }
+        previous_state = current_state;
         vTaskDelay(pdMS_TO_TICKS(10)); // Polling delay
     }
 }
@@ -133,32 +149,32 @@ void buttonTask2(void *param) {
 void buttonTask3(void *param) {
 
     create_button(buttons[2].pin);
+    bool previous_state = true; // assuming the button is released (high)
 
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        if (!gpio_get(buttons[2].pin)) {
+        bool current_state = gpio_get(buttons[2].pin); //true if button is not pressed
+
+        if (previous_state == false && current_state == true) {
             if (current_time - *buttons[2].last_button_press_time >= 250) {
                 *buttons[2].last_button_press_time = current_time;
                 (*buttons[2].counter)++;
                 debug("Button: %d pressed. Count: %d\n", 2, *buttons[2].counter, 0);
                 xEventGroupSetBits(event_group, buttons[2].bit);
                 last_run_times[2] = xTaskGetTickCount();
+
+                // Resume watchdog when event bit is set
+                vTaskResume(watchdogTaskHandle);
             }
         }
+        previous_state = current_state;
         vTaskDelay(pdMS_TO_TICKS(10)); // Polling delay
     }
 }
 
 void watchdogTask (void *param) {
+    TickType_t last_print_time = xTaskGetTickCount();
     while (true) {
-        // Wait for the event group to be updated by any task
-        xEventGroupWaitBits(
-                event_group,
-                TASK1_BIT | TASK2_BIT | TASK3_BIT,
-                pdTRUE,
-                pdFALSE,
-                portMAX_DELAY);
-
         TickType_t current_time = xTaskGetTickCount();
         bool all_tasks_ok = true;
 
@@ -171,8 +187,21 @@ void watchdogTask (void *param) {
         }
 
         if (all_tasks_ok) {
-            debug("OK: All tasks ran within 30 seconds\n", 0, 0, 0);
+            TickType_t elapsed_time = current_time - last_print_time;
+            debug("OK. Elapsed ticks: %u\n", (unsigned) elapsed_time, 0, 0);
+            last_print_time = current_time;
+        } else {
+            debug("Watchdog suspending itself\n", 0, 0, 0);
+            vTaskSuspend(NULL);
         }
+
+        xEventGroupWaitBits(
+                event_group,
+                TASK1_BIT | TASK2_BIT | TASK3_BIT,
+                pdTRUE,
+                pdFALSE,
+                portMAX_DELAY);
+
 
         vTaskDelay(pdMS_TO_TICKS(30000)); // Check every 30 seconds
     }
@@ -190,7 +219,7 @@ int main() {
     xTaskCreate(buttonTask1, "TASK1", 512, (void *) 0, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(buttonTask2, "TASK2", 512, (void *) 1, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(buttonTask3, "TASK3", 512, (void *) 2, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(watchdogTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(watchdogTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, &watchdogTaskHandle);
     xTaskCreate(debugTask, "TASK5", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
 
 
