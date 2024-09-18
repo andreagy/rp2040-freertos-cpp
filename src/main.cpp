@@ -216,9 +216,9 @@ int main() {
 
     event_group = xEventGroupCreate();
 
-    xTaskCreate(buttonTask1, "TASK1", 512, (void *) 0, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(buttonTask2, "TASK2", 512, (void *) 1, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(buttonTask3, "TASK3", 512, (void *) 2, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(buttonTask1, "TASK1", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(buttonTask2, "TASK2", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(buttonTask3, "TASK3", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(watchdogTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, &watchdogTaskHandle);
     xTaskCreate(debugTask, "TASK5", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
 
