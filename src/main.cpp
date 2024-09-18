@@ -30,11 +30,11 @@ const uint SW2_PIN = 7;
 struct debugEvent {
     const char *format;
     uint32_t data[3];
+    TickType_t timestamp;
 };
 
 QueueHandle_t syslog_q;
 EventGroupHandle_t event_group;
-TaskHandle_t watchdogTaskHandle;
 
 // Global to track the last runtime of tasks
 TickType_t last_run_times[3] = {0}; // buttonTask1-2-3 -> 0, 1, 2
@@ -74,6 +74,7 @@ void debug(const char *format, uint32_t d1, uint32_t d2, uint32_t d3) {
     e.data[0] = d1;
     e.data[1] = d2;
     e.data[2] = d3;
+    e.timestamp = xTaskGetTickCount();
     xQueueSend(syslog_q, &e, portMAX_DELAY);
 }
 
@@ -83,11 +84,8 @@ void debugTask(void *param) {
 
     while (1) {
         if (xQueueReceive(syslog_q, &e, portMAX_DELAY) == pdTRUE) {
-            //get the current timestamp
-            TickType_t timestamp = xTaskGetTickCount();
-
             //format the message with the timestamp
-            snprintf(buffer, sizeof(buffer), "[%u] %s", timestamp, e.format);
+            snprintf(buffer, sizeof(buffer), "[%u] %s", e.timestamp, e.format);
             printf(buffer, e.data[0], e.data[1], e.data[2]);
         }
     }
@@ -110,9 +108,6 @@ void buttonTask1(void *param) {
                 debug("Button: %d pressed. Count: %d\n", 0, *buttons[0].counter, 0);
                 xEventGroupSetBits(event_group, buttons[0].bit);
                 last_run_times[0] = xTaskGetTickCount();
-
-                // Resume watchdog when event bit is set
-                vTaskResume(watchdogTaskHandle);
             }
         }
         previous_state = current_state;
@@ -136,9 +131,6 @@ void buttonTask2(void *param) {
                 debug("Button: %d pressed. Count: %d\n", 1, *buttons[1].counter, 0);
                 xEventGroupSetBits(event_group, buttons[1].bit);
                 last_run_times[1] = xTaskGetTickCount();
-
-                // Resume watchdog when event bit is set
-                vTaskResume(watchdogTaskHandle);
             }
         }
         previous_state = current_state;
@@ -163,8 +155,6 @@ void buttonTask3(void *param) {
                 xEventGroupSetBits(event_group, buttons[2].bit);
                 last_run_times[2] = xTaskGetTickCount();
 
-                // Resume watchdog when event bit is set
-                vTaskResume(watchdogTaskHandle);
             }
         }
         previous_state = current_state;
@@ -176,34 +166,32 @@ void watchdogTask (void *param) {
     TickType_t last_print_time = xTaskGetTickCount();
     while (true) {
         TickType_t current_time = xTaskGetTickCount();
-        bool all_tasks_ok = true;
+        EventBits_t bits = xEventGroupWaitBits(
+                event_group,
+                TASK1_BIT | TASK2_BIT | TASK3_BIT,
+                pdTRUE,
+                pdTRUE,
+                TASK_RUN_TIMEOUT
+        );
 
-        // Check if each task has run in the last 30 seconds
-        for (int i = 0; i < 3; i++) {
-            if ((current_time - last_run_times[i]) > TASK_RUN_TIMEOUT) {
-                all_tasks_ok = false;
-                debug("Fail: Task %d missed deadline\n", i+1, 0, 0);
-            }
-        }
+        EventBits_t expected_bits = TASK1_BIT | TASK2_BIT | TASK3_BIT;
+        EventBits_t missed_bits = expected_bits & ~bits;
 
-        if (all_tasks_ok) {
+        if ((bits & (TASK1_BIT | TASK2_BIT | TASK3_BIT)) == (TASK1_BIT | TASK2_BIT | TASK3_BIT)) {
             TickType_t elapsed_time = current_time - last_print_time;
             debug("OK. Elapsed ticks: %u\n", (unsigned) elapsed_time, 0, 0);
             last_print_time = current_time;
         } else {
-            debug("Watchdog suspending itself\n", 0, 0, 0);
+            int missed_deadline_count = 0;
+            for (int i = 0; i < 3; i++) {
+                if (missed_bits & (1UL << i)) {
+                    missed_deadline_count++;
+                    debug("Fail: ButtonTask %d missed deadline\n", i+1, 0, 0);
+                }
+            }
+            debug("Watchdog suspending: Not all tasks responded.\n", 0, 0, 0);
             vTaskSuspend(NULL);
         }
-
-        xEventGroupWaitBits(
-                event_group,
-                TASK1_BIT | TASK2_BIT | TASK3_BIT,
-                pdTRUE,
-                pdFALSE,
-                portMAX_DELAY);
-
-
-        vTaskDelay(pdMS_TO_TICKS(30000)); // Check every 30 seconds
     }
 }
 
@@ -219,7 +207,7 @@ int main() {
     xTaskCreate(buttonTask1, "TASK1", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(buttonTask2, "TASK2", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(buttonTask3, "TASK3", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(watchdogTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, &watchdogTaskHandle);
+    xTaskCreate(watchdogTask, "TASK4", 512, (void *) nullptr, tskIDLE_PRIORITY + 3, NULL);
     xTaskCreate(debugTask, "TASK5", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
 
 
