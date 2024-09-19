@@ -177,7 +177,8 @@ void watchdogTask (void *param) {
         EventBits_t expected_bits = TASK1_BIT | TASK2_BIT | TASK3_BIT;
         EventBits_t missed_bits = expected_bits & ~bits;
 
-        if ((bits & (TASK1_BIT | TASK2_BIT | TASK3_BIT)) == (TASK1_BIT | TASK2_BIT | TASK3_BIT)) {
+        //bitmask received bits and compare it to expected bits
+        if ((bits & expected_bits) == expected_bits) {
             TickType_t elapsed_time = current_time - last_print_time;
             debug("OK. Elapsed ticks: %u\n", (unsigned) elapsed_time, 0, 0);
             last_print_time = current_time;
