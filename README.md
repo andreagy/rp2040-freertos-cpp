@@ -20,10 +20,14 @@ timestamp at the beginning of the line followed by the message
 The queue maintains ordering of the items so the debug messages will print out in the same order as they 
 were sent to the queue.
 
-### Part 1: 
-Implement a program with four tasks and an event group. Task 1 waits for user to press a button. When the 
-button is pressed task 1 sets bit 0 of the event group. Tasks 2 and 3 wait on the event bit with an infinite 
-timeout. When the bit is set the tasks start running their main loops. In the main loop each task prints task 
-number and number of elapsed ticks since the last print at random interval that is between 1 – 2 seconds. 
-Task 4 is debug print task. Tasks 1 – 3 must run at higher priority than the debug task. The tasks must use 
-the debug function described above for printing.
+### Part 2: 
+Implement a program with five tasks and an event group. Task 4 is a watchdog task to monitor that tasks 1 – 3 run at least once every 30 seconds. Tasks 1 – 3 implement a loop that waits for button presses. When a 
+button is pressed and released the task sets a bit in the event group, prints a debug message, and goes 
+back to wait for another button press. Holding the button without releasing must block the main loop from 
+running. Each task monitors one button. 
+
+Task 4 prints “OK” and number of elapsed ticks from last “OK” when all (other) tasks have notified that they 
+have run the loop. If some of the tasks does not run within 30 seconds Task 4 prints “Fail” and the number 
+of the task(s) not meeting the deadline and then Task 4 suspends itself. 
+
+Task 5 is the debug print task. It must run at a lower priority than tasks 1 – 4. 
