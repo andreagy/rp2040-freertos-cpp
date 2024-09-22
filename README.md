@@ -16,6 +16,13 @@ LED.</p>
 <p><strong>Exercise 3: Timers</strong><br>
 Read commands from the serial port using the interrupt driven FreeRTOS UART driver provided. User can enter 3 commands: "help" to display commands, "interval <seconds>" to set LED toggle interval, and "time" to display time since the last LED toggle. The program creates two timers: one for detecting user input inactivity, and one for toggling an LED. </p>
 
+<p><strong>Exercise 4: Event Groups, Part 1</strong><br>
+Implement a program with 4 tasks and an event group. Task 1 waits for a button press, sets an event bit, and then prints elapsed ticks with a random delay. Tasks 2 and 3 wait for the event bit and then they loop, printing elapsed ticks with random delays. Task 4 handles debug printing. Tasks 1-3 have higher priority than Task 4." </p>
+
+<p><strong>Exercise 4: Event Groups, Part 2</strong><br>
+Implement a program with 5 tasks and an event group. Tasks 1–3 monitor buttons, setting event bits and printing debug messages on press/release. Holding a button blocks the task loop. Task 4 is a watchdog that prints 'OK' with elapsed ticks when all tasks run within 30 seconds. If any task fails, it prints 'Fail' with the task number and suspends. Task 5 handles debug printing at a lower priority. </p>
+
+
 
 The original template is based on https://github.com/LearnEmbeddedSystems/rp2040-freertos-template.git
 This is a template project for developing FreeRTOS based applications on Raspberry Pi RP2040 based boards. This template uses the "official" RP2040 port from the Raspberry Pi Foundation. 
