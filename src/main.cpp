@@ -93,48 +93,62 @@ void debugTask(void *param) {
 }
 
 void buttonTask(void *param) {
+    int task_number = 1;
 
     for (auto &button: buttons) {
         create_button(button.pin);
     }
 
     while (true) {
-        uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        for (int i = 0; i < 3; i++) {
-            if (!gpio_get(buttons[i].pin)) {
-                if (current_time - *buttons[i].last_button_press_time >= 250) {
-                    *buttons[i].last_button_press_time = current_time;
-                    (*buttons[i].counter)++;
-                    debug("Button: %d pressed. Count: %d\n", i, *buttons[i].counter, 0);
-                    xEventGroupSetBits(event_group, buttons[i].bit);
-                }
+        if (!gpio_get(buttons[0].pin)) {
+            uint32_t current_time = to_ms_since_boot(get_absolute_time());
+            if (current_time - *buttons[0].last_button_press_time >= 250) {
+                *buttons[0].last_button_press_time = current_time;
+
+                xEventGroupSetBits(event_group, TASK1_BIT);
+                break;
             }
         }
         vTaskDelay(pdMS_TO_TICKS(10)); // Polling delay
     }
+
+    //after button press, continuously print debug
+    TickType_t last_print_time = xTaskGetTickCount();
+    while (true) {
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_ticks = current_time - last_print_time;
+
+        debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned)elapsed_ticks, 0);
+        last_print_time = current_time;
+
+        TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
+        vTaskDelay(random_delay);
+    }
+
 }
 
 void task2(void *param) {
     const int task_number = 2;
     TickType_t last_print_time = xTaskGetTickCount();
 
+    xEventGroupWaitBits(
+            event_group,
+            TASK1_BIT,
+            pdFALSE,
+            pdTRUE,
+            portMAX_DELAY);
+
     while (true) {
-        // Wait for TASK1_BIT to be set
-        xEventGroupWaitBits(event_group, TASK1_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_ticks = current_time - last_print_time;
 
-        while (true) {
-            TickType_t current_time = xTaskGetTickCount();
-            TickType_t elapsed_ticks = current_time - last_print_time;
+        debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
+        last_print_time = current_time;
 
-            debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
-            last_print_time = current_time;
+        // Generate random delay
+        TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
+        vTaskDelay(random_delay);
 
-            // Generate random delay
-            TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
-            vTaskDelay(random_delay);
-
-            break;
-        }
     }
 }
 
@@ -143,24 +157,24 @@ void task3(void *param) {
     const int task_number = 3;
     TickType_t last_print_time = xTaskGetTickCount();
 
+    xEventGroupWaitBits(
+            event_group,
+            TASK1_BIT,
+            pdFALSE,
+            pdTRUE,
+            portMAX_DELAY);
+
     while (true) {
-        // Wait for TASK1_BIT to be set
-        xEventGroupWaitBits(event_group, TASK1_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_ticks = current_time - last_print_time;
 
-        while (true) {
-            TickType_t current_time = xTaskGetTickCount();
-            TickType_t elapsed_ticks = current_time - last_print_time;
+        debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
+        last_print_time = current_time;
 
+        // Generate random delay
+        TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
+        vTaskDelay(random_delay);
 
-            debug("Task %d: Elapsed ticks: %u\n", task_number, (unsigned) elapsed_ticks, 0);
-            last_print_time = current_time;
-
-            // Generate random delay
-            TickType_t random_delay = pdMS_TO_TICKS(distr(gen));
-            vTaskDelay(random_delay);
-
-            break;
-        }
     }
 }
 
