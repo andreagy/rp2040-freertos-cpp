@@ -33,6 +33,7 @@ const uint SW2_PIN = 7;
 struct debugEvent {
     const char *format;
     uint32_t data[3];
+    TickType_t timestamp;
 };
 
 QueueHandle_t syslog_q;
@@ -73,6 +74,7 @@ void debug(const char *format, uint32_t d1, uint32_t d2, uint32_t d3) {
     e.data[0] = d1;
     e.data[1] = d2;
     e.data[2] = d3;
+    e.timestamp = xTaskGetTickCount();
     xQueueSend(syslog_q, &e, portMAX_DELAY);
 }
 
@@ -82,11 +84,9 @@ void debugTask(void *param) {
 
     while (1) {
         if (xQueueReceive(syslog_q, &e, portMAX_DELAY) == pdTRUE) {
-            //get the current timestamp
-            TickType_t timestamp = xTaskGetTickCount();
 
             //format the message with the timestamp
-            snprintf(buffer, sizeof(buffer), "[%u] %s", timestamp, e.format);
+            snprintf(buffer, sizeof(buffer), "[%lu] %s", e.timestamp, e.format);
             printf(buffer, e.data[0], e.data[1], e.data[2]);
         }
     }
@@ -95,9 +95,7 @@ void debugTask(void *param) {
 void buttonTask(void *param) {
     int task_number = 1;
 
-    for (auto &button: buttons) {
-        create_button(button.pin);
-    }
+    create_button(buttons[0].pin);
 
     while (true) {
         if (!gpio_get(buttons[0].pin)) {
