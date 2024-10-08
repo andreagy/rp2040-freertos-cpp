@@ -56,11 +56,9 @@ int main()
 
     serial_sem = xSemaphoreCreateBinary();
 
-    if (serial_sem != NULL) {
-        xTaskCreate(read_task, "SERIAL_READ", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
-        xTaskCreate(blinker_task, "LED_BLINK", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
-        vTaskStartScheduler();
-    }
+    xTaskCreate(read_task, "SERIAL_READ", 512, (void *) nullptr, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(blinker_task, "LED_BLINK", 512, (void *) nullptr, tskIDLE_PRIORITY + 2, NULL);
+    vTaskStartScheduler();
 
 
 
